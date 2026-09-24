@@ -46,7 +46,8 @@
 <body>
   <h1 class="sr">Lucas Strzelec Architecture</h1>
   <div class="grow" aria-hidden="true"><div class="wheel"><svg id="spiral" viewBox="-100 -100 200 200"></svg></div></div>
-  <div class="hub" id="hub" role="button" tabindex="0" aria-label="Enter"><p class="msg" id="msg" aria-live="polite"></p></div>
+  <div class="hub" id="hub" role="button" tabindex="0" aria-label="Enter"><p class="msg" id="msg" aria-hidden="true"></p></div>
+  <div class="sr" id="live" aria-live="polite"></div>
 
 <script>
 /* the sentences, one every 5 seconds once you have clicked the circle: edit, add or remove lines here */
@@ -85,7 +86,8 @@ var SPEED_UP   = 50;   // how many seconds the speeding up takes
 
 /* click the circle: the page spirals, then the sentences start. Click the name at the end: it explodes. */
 (function () {
-  var hub = document.getElementById("hub"), msg = document.getElementById("msg"), started = false, ready = false, i = 0, IN = 0.8;
+  var hub = document.getElementById("hub"), msg = document.getElementById("msg"), live = document.getElementById("live"),
+      started = false, ready = false, IN = 0.8, OUT = 1.1;          // OUT: a line starts fading out this many seconds before the next one is due
   var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   var wheel = document.querySelector(".wheel"), spinRaf = 0, angle = 0;
@@ -107,27 +109,37 @@ var SPEED_UP   = 50;   // how many seconds the speeding up takes
     if (on) { hub.setAttribute("role", "button"); hub.tabIndex = 0; hub.setAttribute("aria-label", "Lucas Strzelec"); }
     else if (started) { hub.removeAttribute("role"); hub.removeAttribute("tabindex"); hub.removeAttribute("aria-label"); }
   }
-  function show() {
-    var last = (i === SENTENCES.length - 1);
-    msg.textContent = SENTENCES[i];
-    requestAnimationFrame(function () { requestAnimationFrame(function () { msg.classList.add("in"); }); });   // fade in
-    if (last) setTimeout(function () { setReady(true); }, IN * 1000);
-    if (last && !LOOP) return;                                        // the last one stays
-    setTimeout(function () { msg.classList.remove("in"); setReady(false); }, (EVERY - IN) * 1000);   // fade out just before the next
-    setTimeout(function () { i = (i + 1) % SENTENCES.length; show(); }, EVERY * 1000);
+  /* The sentences follow the clock, not a chain of timers, so a phone that pauses the page (switching apps, low battery mode)
+     always shows the right sentence when it wakes up. Each sentence is a brand-new line of text, swapped in while invisible,
+     so two sentences can never be drawn on top of each other. */
+  var seqStart = 0, seqTimer = 0, curK = -1, shown = false, exploded = false;
+  function put(text) {
+    var el = document.createElement("p"); el.className = "msg"; el.setAttribute("aria-hidden", "true"); el.textContent = text;
+    hub.replaceChild(el, msg); msg = el; void el.offsetWidth;        // new element, starts invisible
+    live.textContent = text;                                         // read out by screen readers
+  }
+  function tick() {
+    var e = (performance.now() - seqStart) / 1000; if (e < 0 || exploded) return;
+    var n = SENTENCES.length, k = Math.floor(e / EVERY);
+    if (!LOOP && k > n - 1) k = n - 1;                               // stay on the last sentence
+    var idx = k % n, last = (idx === n - 1);
+    if (k !== curK) { curK = k; put(SENTENCES[idx]); shown = false; setReady(false); }
+    var ph = e - k * EVERY, want = ph >= 0.05 && ((last && !LOOP) || ph < EVERY - OUT);      // fade in at the start, out just before the next
+    if (want !== shown) { shown = want; msg.classList.toggle("in", want); }
+    var rd = last && want && ph >= IN; if (rd !== ready) setReady(rd);                     // the name can be clicked once it has faded in
   }
   function start() {
     if (started) return; started = true;
     document.body.classList.add("on");
     hub.removeAttribute("role"); hub.removeAttribute("tabindex"); hub.removeAttribute("aria-label");
     startSpin();
-    setTimeout(show, 1000);                                           // the first sentence arrives as the spiral settles
+    seqStart = performance.now() + 1000;                              // the first sentence arrives as the spiral settles
+    seqTimer = setInterval(tick, 100); document.addEventListener("visibilitychange", tick);
   }
 
   /* ---- the explosion: your name breaks into a few hundred thousand pieces that scatter, then go out one by one until only black is left ---- */
-  var exploded = false;
   function explode() {
-    if (exploded) return; exploded = true; setReady(false);
+    if (exploded) return; exploded = true; clearInterval(seqTimer); setReady(false);
     var W = innerWidth, H = innerHeight, hb = hub.getBoundingClientRect(), cx = hb.left + hb.width / 2, cy = hb.top + hb.height / 2;
 
     /* 1. find where every letter is on the screen (line by line) and draw them big on a hidden canvas */
