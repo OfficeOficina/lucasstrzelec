@@ -5,14 +5,92 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lucas Strzelec</title>
 <style>
-  html,body{height:100%;margin:0}
-  body{display:grid;place-items:center;background:#fff}      /* page colour */
-  .dot{width:30vmin;height:30vmin;border-radius:50%;background:#000}   /* the circle: size and colour */
+  html,body{height:100%;margin:0;overflow:hidden}
+  body{display:grid;place-items:center;background:#fff}                         /* page colour */
+  .dot{width:30vmin;height:30vmin;border:0;padding:0;border-radius:50%;background:#000;   /* the circle: size and colour */
+       cursor:pointer;transition:transform .25s ease;-webkit-tap-highlight-color:transparent}
+  .dot:hover{transform:scale(1.04)}
+  .dot:focus-visible{outline:2px solid #000;outline-offset:6px}
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  canvas{position:fixed;left:0;top:0;width:100%;height:100%;z-index:10;display:block}
 </style>
 </head>
 <body>
   <h1 class="sr">Lucas Strzelec Architecture</h1>
-  <div class="dot" role="img" aria-label="Black circle"></div>
+  <button class="dot" id="dot" type="button" aria-label="Enter"></button>
+
+<script>
+/* Click the circle: you fly down a tunnel that gets faster and faster, then the light at the end takes you to the next page. */
+var DESTINATION = "projects.html";   // where the tunnel ends. Use "" to keep flying forever.
+var SECONDS     = 6.4;               // how long the tunnel lasts before the light
+
+(function () {
+  var dot = document.getElementById("dot"), cv = null, raf = 0, going = false;
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function stop() {                                              // back to the plain circle (e.g. the Back button)
+    cancelAnimationFrame(raf); going = false;
+    if (cv) { cv.remove(); cv = null; }
+    dot.style.visibility = "";
+  }
+  addEventListener("pageshow", function (e) { if (e.persisted) stop(); });
+
+  dot.addEventListener("click", function () {
+    if (going) return; going = true;
+    if (still) {                                                 // reduced motion: no flying, just a quick fade
+      document.body.style.transition = "opacity .35s"; document.body.style.opacity = "0";
+      setTimeout(function () { if (DESTINATION) location.href = DESTINATION; }, 380); return;
+    }
+    var d = dot.getBoundingClientRect();
+    cv = document.createElement("canvas"); document.body.appendChild(cv);
+    var ctx = cv.getContext("2d"), W, H, DPR;
+    function size() {
+      DPR = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight;
+      cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    }
+    size(); addEventListener("resize", size);
+    dot.style.visibility = "hidden";                             // the canvas draws the circle from here on
+
+    var rHole = d.width / 2,                                     // the far end of the tunnel = the circle you clicked
+        ZFAR = 30, DZ = 1.2, TW = 0.075,                         // depth of the tunnel, spacing of the rings, thickness of the rings
+        K = rHole * ZFAR,                                        // perspective: a ring at depth z is drawn with radius K / z
+        rMax = 0.78 * Math.hypot(W, H), ZNEAR = K / rMax,
+        cam = 0, t = 0, last = performance.now();
+
+    function speed(s) { return Math.min(70, 0.6 + 1.25 * s * s); }   // units per second: 0.6 -> about 50 by the end
+
+    function rings(camPos, alpha) {
+      var first = Math.ceil((camPos + ZNEAR) / DZ), i, z, r;
+      ctx.globalAlpha = alpha;
+      for (i = first; ; i++) {
+        z = i * DZ - camPos; if (z > ZFAR) break;
+        r = K / z; ctx.lineWidth = Math.max(1, TW * r);
+        ctx.beginPath(); ctx.arc(W / 2, H / 2, r, 0, 6.2832); ctx.stroke();
+      }
+    }
+
+    function frame(now) {
+      var dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
+      var v = speed(t), prev = cam; cam += v * dt;
+
+      ctx.globalAlpha = 1; ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = "#000";
+      var fade = Math.min(1, t / 0.8),                           // the rings fade in as you start moving
+          N = Math.max(1, Math.min(16, Math.ceil((cam - prev) / (DZ * TW * 1.6))));   // motion blur: more samples the faster you go
+      for (var s = 0; s < N; s++) rings(prev + (cam - prev) * (s + 0.5) / N, fade / N);
+      ctx.globalAlpha = 1; ctx.fillStyle = "#000";               // the hole at the far end
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, rHole, 0, 6.2832); ctx.fill();
+
+      if (DESTINATION) {                                         // the light at the end
+        var l0 = SECONDS - 0.9;
+        if (t > l0) { var a = Math.min(1, (t - l0) / 0.9); ctx.globalAlpha = a * a; ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H); }
+        if (t >= SECONDS) { location.href = DESTINATION; return; }
+      }
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+  });
+})();
+</script>
 </body>
 </html>
