@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lucas Strzelec</title>
+<style>
+  html,body{height:100%;margin:0;overflow:hidden}
+  body{background:#fff;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+
+  /* the wheel: a big spiral that turns slowly around the middle of the screen */
+  .wheel{position:fixed;left:50%;top:50%;width:150vmax;height:150vmax;margin:-75vmax 0 0 -75vmax;
+         animation:spin 14s linear infinite}                 /* <- 14s = one full turn. Smaller number = faster. */
+  .wheel svg{display:block;width:100%;height:100%}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* the black middle where the sentences appear */
+  .hub{position:fixed;left:50%;top:50%;width:54vmin;height:54vmin;margin:-27vmin 0 0 -27vmin;border-radius:50%;
+       background:#000;box-shadow:0 0 0 1.8vmin #fff;display:grid;place-items:center}
+  .msg{width:42vmin;margin:0;text-align:center;color:#fff;font-size:clamp(17px,5.2vmin,48px);line-height:1.22;letter-spacing:.01em;
+       opacity:0;transition:opacity .8s ease}
+  .msg.in{opacity:1}
+
+  @media (prefers-reduced-motion:reduce){.wheel{animation:none}}   /* people who asked for less motion get a still wheel */
+</style>
+</head>
+<body>
+  <div class="wheel" aria-hidden="true"><svg id="spiral" viewBox="-100 -100 200 200"></svg></div>
+  <div class="hub"><p class="msg" id="msg" aria-live="polite"></p></div>
+
+<script>
+/* the sentences, one every 5 seconds: edit, add or remove lines here */
+var SENTENCES = [
+  "Architecture is worth it",
+  "Your budget is bigger than you think",
+  "You don't need to save your money",
+  "You need an architect to do that",
+  "Hire me",
+  "Lucas Strzelec"
+];
+var EVERY = 5;       // seconds between sentences
+var LOOP  = false;   // false = stay on the last sentence, true = start again from the first
+
+/* draw the spiral: ARMS black arms, each one winding TURNS times around the centre */
+(function () {
+  var ARMS = 7, TURNS = 3, STEPS = 220, WIDTH = 0.5,          // WIDTH: how much of each gap is black (0.5 = half)
+      svg = document.getElementById("spiral"), d = "";
+  for (var j = 0; j < ARMS; j++) {
+    var off = j * 2 * Math.PI / ARMS, w = WIDTH * 2 * Math.PI / ARMS, a = [], b = [], i, th, r;
+    for (i = 0; i <= STEPS; i++) {
+      th = TURNS * 2 * Math.PI * i / STEPS; r = 100 * i / STEPS;
+      a.push((r * Math.cos(th + off)).toFixed(2) + " " + (r * Math.sin(th + off)).toFixed(2));
+      b.push((r * Math.cos(th + off + w)).toFixed(2) + " " + (r * Math.sin(th + off + w)).toFixed(2));
+    }
+    d += "M" + a.join("L") + "L" + b.reverse().join("L") + "Z";
+  }
+  var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p.setAttribute("d", d); p.setAttribute("fill", "#000"); svg.appendChild(p);
+})();
+
+/* the sentences fade in and out in the middle */
+(function () {
+  var msg = document.getElementById("msg"), i = 0, IN = 0.8;
+  function show() {
+    msg.textContent = SENTENCES[i];
+    requestAnimationFrame(function () { requestAnimationFrame(function () { msg.classList.add("in"); }); });   // fade in
+    var last = (i === SENTENCES.length - 1);
+    if (last && !LOOP) return;                                        // the last one stays
+    setTimeout(function () { msg.classList.remove("in"); }, (EVERY - IN) * 1000);    // fade out just before the next
+    setTimeout(function () { i = (i + 1) % SENTENCES.length; show(); }, EVERY * 1000);
+  }
+  setTimeout(show, 300);
+})();
+</script>
+</body>
+</html>
