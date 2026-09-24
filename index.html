@@ -24,6 +24,9 @@
   .hub:focus-visible{box-shadow:0 0 0 1.4vmin #fff,0 0 0 calc(1.4vmin + 2px) #000}
   .on .hub{cursor:default}
   .on .hub:hover{transform:none}
+  .on .hub.ready{cursor:pointer}
+  .dead .grow,.dead .hub{visibility:hidden}
+  canvas.blast{position:fixed;left:0;top:0;width:100%;height:100%;z-index:20;display:block}
   .msg{width:24vmin;margin:0;text-align:center;color:#fff;font-size:clamp(12px,3.4vmin,36px);line-height:1.22;letter-spacing:.01em;
        opacity:0;transition:opacity .8s ease}
   .msg.in{opacity:1}
@@ -71,14 +74,23 @@ var LOOP  = false;   // false = stay on the last sentence, true = start again fr
   p.setAttribute("d", d); p.setAttribute("fill", "#000"); svg.appendChild(p);
 })();
 
-/* click the circle: the page spirals, then the sentences start */
+/* click the circle: the page spirals, then the sentences start. Click the name at the end: it explodes. */
 (function () {
-  var hub = document.getElementById("hub"), msg = document.getElementById("msg"), started = false, i = 0, IN = 0.8;
+  var hub = document.getElementById("hub"), msg = document.getElementById("msg"), started = false, ready = false, i = 0, IN = 0.8;
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function setReady(on) {                                             // the last sentence (your name) can be clicked
+    ready = on; hub.classList.toggle("ready", on);
+    if (on) { hub.setAttribute("role", "button"); hub.tabIndex = 0; hub.setAttribute("aria-label", "Lucas Strzelec"); }
+    else if (started) { hub.removeAttribute("role"); hub.removeAttribute("tabindex"); hub.removeAttribute("aria-label"); }
+  }
   function show() {
+    var last = (i === SENTENCES.length - 1);
     msg.textContent = SENTENCES[i];
     requestAnimationFrame(function () { requestAnimationFrame(function () { msg.classList.add("in"); }); });   // fade in
-    if (i === SENTENCES.length - 1 && !LOOP) return;                  // the last one stays
-    setTimeout(function () { msg.classList.remove("in"); }, (EVERY - IN) * 1000);    // fade out just before the next
+    if (last) setTimeout(function () { setReady(true); }, IN * 1000);
+    if (last && !LOOP) return;                                        // the last one stays
+    setTimeout(function () { msg.classList.remove("in"); setReady(false); }, (EVERY - IN) * 1000);   // fade out just before the next
     setTimeout(function () { i = (i + 1) % SENTENCES.length; show(); }, EVERY * 1000);
   }
   function start() {
@@ -87,8 +99,85 @@ var LOOP  = false;   // false = stay on the last sentence, true = start again fr
     hub.removeAttribute("role"); hub.removeAttribute("tabindex"); hub.removeAttribute("aria-label");
     setTimeout(show, 1000);                                           // the first sentence arrives as the spiral settles
   }
-  hub.addEventListener("click", start);
-  hub.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); start(); } });
+
+  /* ---- the explosion: your name breaks into a few hundred thousand pieces that scatter over a black screen ---- */
+  var exploded = false;
+  function explode() {
+    if (exploded) return; exploded = true; setReady(false);
+    var W = innerWidth, H = innerHeight, hb = hub.getBoundingClientRect(), cx = hb.left + hb.width / 2, cy = hb.top + hb.height / 2;
+
+    /* 1. find where every letter is on the screen (line by line) and draw them big on a hidden canvas */
+    var node = msg.firstChild, txt = node.nodeValue, cs = getComputedStyle(msg), fs = parseFloat(cs.fontSize),
+        ls = parseFloat(cs.letterSpacing) || 0, rg = document.createRange(), lines = [], cur = null, k, r;
+    for (k = 0; k < txt.length; k++) {
+      rg.setStart(node, k); rg.setEnd(node, k + 1); r = rg.getBoundingClientRect();
+      if (!r.width && !r.height) continue;
+      if (!cur || Math.abs(r.top - cur.top) > fs * 0.5) { cur = { top: r.top, bottom: r.bottom, left: r.left, s: "" }; lines.push(cur); }
+      cur.s += txt[k]; cur.left = Math.min(cur.left, r.left);
+    }
+    var pad = fs * 0.4, minL = 1e9, minT = 1e9, maxR = -1e9, maxB = -1e9;
+    lines.forEach(function (l) { minL = Math.min(minL, l.left); minT = Math.min(minT, l.top); maxB = Math.max(maxB, l.bottom); maxR = Math.max(maxR, l.left + fs * l.s.length); });
+    var bw = maxR - minL + 2 * pad, bh = maxB - minT + 2 * pad, S = Math.min(6, Math.sqrt(1.6e6 / (bw * bh))),
+        off = document.createElement("canvas"); off.width = Math.ceil(bw * S); off.height = Math.ceil(bh * S);
+    var g = off.getContext("2d"); g.fillStyle = "#fff"; g.textBaseline = "middle";
+    g.font = (fs * S) + "px " + cs.fontFamily; if ("letterSpacing" in g) g.letterSpacing = (ls * S) + "px";
+    lines.forEach(function (l) { g.fillText(l.s.replace(/\s+$/, ""), (l.left - minL + pad) * S, ((l.top + l.bottom) / 2 - minT + pad) * S); });
+    var px = g.getImageData(0, 0, off.width, off.height).data, ink = [], p;
+    for (p = 0; p < px.length; p += 4) if (px[p + 3] > 30) ink.push(p / 4);
+
+    /* 2. turn the letters into particles, each with its own direction, distance and speed */
+    var N = Math.max(30000, Math.min(260000, Math.round(W * H * 0.16))),
+        X0 = new Float32Array(N), Y0 = new Float32Array(N), DX = new Float32Array(N), DY = new Float32Array(N),
+        KK = new Float32Array(N), DL = new Float32Array(N), BR = new Uint8Array(N), SZ = new Uint8Array(N), RMAX = 0.66 * Math.hypot(W, H), n, q, a, dist;
+    for (n = 0; n < N; n++) {
+      q = ink[(Math.random() * ink.length) | 0];
+      X0[n] = minL - pad + ((q % off.width) + Math.random()) / S; Y0[n] = minT - pad + (((q / off.width) | 0) + Math.random()) / S;
+      a = Math.random() * 6.2832; dist = RMAX * Math.pow(Math.random(), 0.55);      // spread over the whole screen, a few fly right off it
+      DX[n] = Math.cos(a) * dist; DY[n] = Math.sin(a) * dist;
+      KK[n] = 1.7 + Math.random() * 1.6; DL[n] = Math.random() * 0.06; BR[n] = 130 + ((Math.random() * 125) | 0); SZ[n] = Math.random() < 0.78 ? 1 : (Math.random() < 0.8 ? 2 : 3);   // mostly dust, some bigger chips
+    }
+    var LUT = new Uint32Array(256); for (n = 0; n < 256; n++) LUT[n] = (0xFF000000 | (n << 16) | (n << 8) | n) >>> 0;
+
+    /* 3. a black screen on top of everything, and the pieces drawn on it */
+    msg.style.transition = "none"; msg.style.opacity = "0";
+    var cv = document.createElement("canvas"); cv.className = "blast"; cv.width = W; cv.height = H; document.body.appendChild(cv);
+    var ctx = cv.getContext("2d"), img = ctx.createImageData(W, H), buf = new Uint32Array(img.data.buffer);
+
+    function paint(t, bg) {                                             // t = seconds since the click (Infinity = where everything ends up)
+      buf.fill(((Math.round(bg * 255) << 24) >>> 0)); var e, tt, x, y, m;
+      for (m = 0; m < N; m++) {
+        tt = t - DL[m];
+        if (tt <= 0) { x = X0[m]; y = Y0[m]; }
+        else { e = tt === Infinity ? 1 : 1 - Math.exp(-KK[m] * tt); x = X0[m] + DX[m] * e; y = Y0[m] + DY[m] * e; }
+        x = x | 0; y = y | 0;
+        if (SZ[m] === 1) { if (x >= 0 && y >= 0 && x < W && y < H) buf[y * W + x] = LUT[BR[m]]; }
+        else { for (var yy = y; yy < y + SZ[m]; yy++) for (var xx = x; xx < x + SZ[m]; xx++) if (xx >= 0 && yy >= 0 && xx < W && yy < H) buf[yy * W + xx] = LUT[BR[m]]; }
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    if (still) {                                                        // reduced motion: no flying, the scattered pieces just fade in
+      paint(Infinity, 1); cv.style.opacity = "0"; cv.style.transition = "opacity .8s ease";
+      requestAnimationFrame(function () { cv.style.opacity = "1"; }); document.body.classList.add("dead"); armRestart(cv); return;
+    }
+    var t0 = performance.now(), dead = false;
+    (function frame(now) {
+      var t = Math.max(0, (now - t0) / 1000), bg = Math.min(1, t / 0.45); bg = bg * bg * (3 - 2 * bg);      // the page goes black while the pieces fly
+      paint(t, bg);
+      if (t < 0.6) {                                                    // a quick glow and a ring where it goes off
+        var gl = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(W, H) * 0.32), al = 0.85 * Math.exp(-t * 8);
+        gl.addColorStop(0, "rgba(255,255,255," + al + ")"); gl.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = "rgba(255,255,255," + Math.max(0, 0.5 * (1 - t / 0.6)) + ")"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, t * Math.max(W, H) * 1.5, 0, 6.2832); ctx.stroke();
+      }
+      if (!dead && bg >= 1) { dead = true; document.body.classList.add("dead"); }      // the page underneath is switched off
+      if (t < 4.5) requestAnimationFrame(frame); else { paint(Infinity, 1); armRestart(cv); }
+    })(t0);
+  }
+  function armRestart(cv) { setTimeout(function () { cv.style.cursor = "pointer"; cv.addEventListener("click", function () { location.reload(); }); }, 600); }   // click the dust to start again
+
+  function act() { if (!started) start(); else if (ready) explode(); }
+  hub.addEventListener("click", act);
+  hub.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } });
 })();
 </script>
 </body>
