@@ -3,20 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Info</title>
+<title>Projects</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
 <header class="top">
   <a class="name" id="siteName" href="index.html"></a>
   <a href="projects.html">PROJECTS</a>
   <a href="info.html">INFO</a>
 </header>
-<main style="padding:22px 6px;max-width:44em">
-  <p>Write a few lines about yourself here.</p>
-  <p><a href="mailto:you@example.com">you@example.com</a></p>
-</main>
+
+<section class="filter" aria-label="Filter projects">
+  <div class="lbl">INDEX</div>
+  <div class="tags" id="tags"></div>
+</section>
+
+<main id="list"></main>
+
 <script src="projects.js"></script>
-<script>document.getElementById("siteName").textContent=SITE.name;</script>
+<script src="app.js"></script>
 </body>
 </html>
