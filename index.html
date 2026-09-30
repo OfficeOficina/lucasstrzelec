@@ -29,15 +29,15 @@
 </head>
 <body>
   <!-- move the mouse over the initials and they come with you, each letter trailing behind the one before it.
-       Click once and the full name appears under them; click again to go to the projects. (On a phone: drag them with your finger, tap to go in.) -->
+       The pointer always sits in the middle of the name. Click once and the full name appears; click again to go to the projects. (On a phone: drag them with your finger, tap to go in.) -->
   <a class="ljs" id="ljs" href="projects.html" aria-label="Lucas Strzelec: projects" draggable="false"><span>L</span><span>J</span><span>S</span></a>
 
 <script>
 (function(){
   var a=document.getElementById("ljs"),ls=[].slice.call(a.children),
       FOLLOW=.28;                                   // how quickly each letter catches up (smaller = longer trail)
-  var p=ls.map(function(){return{x:0,y:0}}),       // where each letter has been moved to, from its place in the middle
-      target={x:0,y:0},grab=null,carried=false,last=0,raf=0,touch=null;
+  var p=ls.map(function(){return{x:0,y:0}}),       // where each letter has been moved to, from its place in the middle of the page
+      ptr=null,carried=false,last=0,raf=0,touch=null;
 
   /* the rest of the name, hanging under each initial */
   var REST=["UCAS","OSEPH","TRZELEC"],opened=false;
@@ -47,21 +47,21 @@
       c.style.transitionDelay=(j*.07+i*.05)+"s";t.appendChild(c)});
     l.appendChild(t);
   });
-  function open(){opened=true;a.classList.add("open");a.setAttribute("aria-label","Lucas Joseph Strzelec: projects");
-    carried=false;target={x:0,y:0};go();            // the letters let go and the whole name settles in the middle of the page
-  }                                                 // (pass over it again to pick it back up)
+  var openAt=0;
+  function open(){opened=true;openAt=performance.now();a.classList.add("open");a.setAttribute("aria-label","Lucas Joseph Strzelec: projects");go()}
+  function enter(){location.href=a.getAttribute("href")}
 
-  function pickUp(e){                               // the letters stick to the pointer where it touched them
-    if(carried)return;carried=true;
-    grab={x:e.clientX-p[0].x,y:e.clientY-p[0].y};
-    move(e);
+  /* the pointer always sits in the middle of the name: the letters are pulled so that their centre is under it */
+  function target(){
+    if(!carried||!ptr)return{x:0,y:0};
+    var r=a.getBoundingClientRect();              // the name in its resting place (it grows when the full name opens)
+    return{x:ptr.x-(r.left+r.width/2),y:ptr.y-(r.top+r.height/2)};
   }
-  function move(e){if(carried){target.x=e.clientX-grab.x;target.y=e.clientY-grab.y;go()}}
   function go(){if(!raf){last=performance.now();raf=requestAnimationFrame(frame)}}
   function frame(now){
-    var dt=Math.min(3,(now-last)/16.67),k=1-Math.pow(1-FOLLOW,dt),busy=false;last=now;
+    var dt=Math.min(3,(now-last)/16.67),k=1-Math.pow(1-FOLLOW,dt),busy=opened&&now-openAt<900,t=target();last=now;
     ls.forEach(function(l,i){
-      var to=i===0?target:p[i-1],q=p[i];          // L follows the pointer, J follows L, S follows J
+      var to=i===0?t:p[i-1],q=p[i];               // L follows the pointer, J follows L, S follows J
       q.x+=(to.x-q.x)*k;q.y+=(to.y-q.y)*k;
       if(Math.abs(to.x-q.x)>.1||Math.abs(to.y-q.y)>.1)busy=true;
       l.style.transform="translate("+q.x+"px,"+q.y+"px)";
@@ -69,19 +69,23 @@
     raf=busy?requestAnimationFrame(frame):0;
   }
 
-  /* mouse: just pass over the letters to pick them up */
-  a.addEventListener("pointerover",function(e){if(e.pointerType==="mouse")pickUp(e)});
-  addEventListener("pointermove",function(e){if(e.pointerType==="mouse"||touch)move(e)});
+  /* mouse: pass over the letters to pick them up; from then on they stay with you.
+     Click once: the full name appears. Click again: in to the projects. */
+  a.addEventListener("pointerover",function(e){if(e.pointerType==="mouse"&&!carried){carried=true;ptr={x:e.clientX,y:e.clientY};go()}});
+  addEventListener("pointermove",function(e){if(e.pointerType==="mouse"||touch){ptr={x:e.clientX,y:e.clientY};if(touch&&Math.hypot(e.clientX-touch.x,e.clientY-touch.y)>6)touch.moved=true;go()}});
+  addEventListener("click",function(e){
+    if(e.pointerType&&e.pointerType!=="mouse"){e.preventDefault();return}  // taps are handled below
+    var onName=e.target.closest&&e.target.closest("#ljs");
+    if(!carried&&!onName)return;                    // before you have picked it up, only the name itself responds
+    e.preventDefault();if(opened)enter();else open();
+  });
 
-  /* touch: press on the letters and drag; a tap without dragging goes in */
+  /* touch: press and drag the name with your finger (it stays centred under it); a tap opens the name, a second tap goes in */
   a.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse")return;
-    e.preventDefault();carried=false;touch={x:e.clientX,y:e.clientY,moved:false};pickUp(e);
+    e.preventDefault();touch={x:e.clientX,y:e.clientY,moved:false};carried=true;ptr={x:e.clientX,y:e.clientY};go();
   });
-  addEventListener("pointermove",function(e){if(touch&&Math.hypot(e.clientX-touch.x,e.clientY-touch.y)>6)touch.moved=true});
-  addEventListener("pointerup",function(){if(!touch)return;var t=touch;touch=null;carried=false;if(!t.moved){if(opened)location.href=a.getAttribute("href");else open()}});
-  /* first click: the full name appears. Second click: in to the projects */
-  a.addEventListener("click",function(e){if(e.pointerType&&e.pointerType!=="mouse"){e.preventDefault();return}if(!opened){e.preventDefault();open()}});
+  addEventListener("pointerup",function(){if(!touch)return;var t=touch;touch=null;carried=false;go();if(!t.moved){if(opened)enter();else open()}});
   addEventListener("pageshow",function(){carried=false;touch=null});
 })();
 </script>
