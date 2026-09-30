@@ -4,18 +4,86 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lucas Strzelec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@700&display=swap" rel="stylesheet">
 <style>
-  /* the landing page: just the initials, in the middle of the page. Change the pink here. */
-  :root{--pink:#ff69b4}
-  html,body{height:100%;margin:0}
-  body{background:#fff;display:grid;place-items:center}
-  .ljs{font-family:Arial,Helvetica,sans-serif;font-weight:700;color:var(--pink);text-decoration:none;
-       font-size:clamp(64px,18vw,260px);line-height:1;letter-spacing:-.02em;cursor:pointer}
-  .ljs:focus-visible{outline:2px solid var(--pink);outline-offset:8px}
+  /* the landing page: just the initials, in the middle of the page. Change the colour here. */
+  :root{--ink:#000}
+  html,body{height:100%;margin:0;overflow:hidden}
+  body{background:#fff;display:grid;place-items:center;touch-action:none}
+  .ljs{font-family:"EB Garamond",Garamond,"Times New Roman",serif;font-weight:700;color:var(--ink);text-decoration:none;
+       font-size:clamp(56px,min(24vw,20vh),260px);line-height:1;letter-spacing:0;cursor:pointer;
+       user-select:none;-webkit-user-select:none;-webkit-user-drag:none;
+       transition:font-size .7s cubic-bezier(.3,.1,.2,1),padding-bottom .7s cubic-bezier(.3,.1,.2,1)}
+  /* open: the whole name, all one size, made to fit the height of the screen and kept in the middle */
+  .ljs.open{font-size:clamp(40px,min(24vw,12vh),260px);padding-bottom:calc(7*.92em)}
+  .ljs>span{margin:0;transition:margin .7s cubic-bezier(.3,.1,.2,1)}
+  .ljs.open>span{margin:0 .22em}                 /* the columns step apart so the letters never touch */
+  .ljs>span{display:inline-block;position:relative;will-change:transform}
+  /* the rest of the name hangs under each initial, the same size */
+  .tail{position:absolute;left:50%;top:100%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;pointer-events:none}
+  .tail i{display:block;font-style:normal;line-height:.92;opacity:0;transform:translateY(-.25em);transition:opacity .45s ease,transform .45s ease}
+  .open .tail i{opacity:1;transform:none}
+  .ljs:focus-visible{outline:2px solid var(--ink);outline-offset:8px}
 </style>
 </head>
 <body>
-  <!-- click the initials to go to the projects -->
-  <a class="ljs" href="projects.html" aria-label="Lucas Strzelec: projects">LJS</a>
+  <!-- move the mouse over the initials and they come with you, each letter trailing behind the one before it.
+       Click once and the full name appears under them; click again to go to the projects. (On a phone: drag them with your finger, tap to go in.) -->
+  <a class="ljs" id="ljs" href="projects.html" aria-label="Lucas Strzelec: projects" draggable="false"><span>L</span><span>J</span><span>S</span></a>
+
+<script>
+(function(){
+  var a=document.getElementById("ljs"),ls=[].slice.call(a.children),
+      FOLLOW=.28;                                   // how quickly each letter catches up (smaller = longer trail)
+  var p=ls.map(function(){return{x:0,y:0}}),       // where each letter has been moved to, from its place in the middle
+      target={x:0,y:0},grab=null,carried=false,last=0,raf=0,touch=null;
+
+  /* the rest of the name, hanging under each initial */
+  var REST=["UCAS","OSEPH","TRZELEC"],opened=false;
+  ls.forEach(function(l,i){
+    var t=document.createElement("span");t.className="tail";t.setAttribute("aria-hidden","true");
+    REST[i].split("").forEach(function(ch,j){var c=document.createElement("i");c.textContent=ch;
+      c.style.transitionDelay=(j*.07+i*.05)+"s";t.appendChild(c)});
+    l.appendChild(t);
+  });
+  function open(){opened=true;a.classList.add("open");a.setAttribute("aria-label","Lucas Joseph Strzelec: projects");
+    carried=false;target={x:0,y:0};go();            // the letters let go and the whole name settles in the middle of the page
+  }                                                 // (pass over it again to pick it back up)
+
+  function pickUp(e){                               // the letters stick to the pointer where it touched them
+    if(carried)return;carried=true;
+    grab={x:e.clientX-p[0].x,y:e.clientY-p[0].y};
+    move(e);
+  }
+  function move(e){if(carried){target.x=e.clientX-grab.x;target.y=e.clientY-grab.y;go()}}
+  function go(){if(!raf){last=performance.now();raf=requestAnimationFrame(frame)}}
+  function frame(now){
+    var dt=Math.min(3,(now-last)/16.67),k=1-Math.pow(1-FOLLOW,dt),busy=false;last=now;
+    ls.forEach(function(l,i){
+      var to=i===0?target:p[i-1],q=p[i];          // L follows the pointer, J follows L, S follows J
+      q.x+=(to.x-q.x)*k;q.y+=(to.y-q.y)*k;
+      if(Math.abs(to.x-q.x)>.1||Math.abs(to.y-q.y)>.1)busy=true;
+      l.style.transform="translate("+q.x+"px,"+q.y+"px)";
+    });
+    raf=busy?requestAnimationFrame(frame):0;
+  }
+
+  /* mouse: just pass over the letters to pick them up */
+  a.addEventListener("pointerover",function(e){if(e.pointerType==="mouse")pickUp(e)});
+  addEventListener("pointermove",function(e){if(e.pointerType==="mouse"||touch)move(e)});
+
+  /* touch: press on the letters and drag; a tap without dragging goes in */
+  a.addEventListener("pointerdown",function(e){
+    if(e.pointerType==="mouse")return;
+    e.preventDefault();carried=false;touch={x:e.clientX,y:e.clientY,moved:false};pickUp(e);
+  });
+  addEventListener("pointermove",function(e){if(touch&&Math.hypot(e.clientX-touch.x,e.clientY-touch.y)>6)touch.moved=true});
+  addEventListener("pointerup",function(){if(!touch)return;var t=touch;touch=null;carried=false;if(!t.moved){if(opened)location.href=a.getAttribute("href");else open()}});
+  /* first click: the full name appears. Second click: in to the projects */
+  a.addEventListener("click",function(e){if(e.pointerType&&e.pointerType!=="mouse"){e.preventDefault();return}if(!opened){e.preventDefault();open()}});
+  addEventListener("pageshow",function(){carried=false;touch=null});
+})();
+</script>
 </body>
 </html>
